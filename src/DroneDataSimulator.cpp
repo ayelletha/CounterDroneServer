@@ -152,7 +152,6 @@ void DroneDataSimulator::process_loop()
     while (g_keep_running_system)
     {
         TelemetryData random_data;
-        BytesArray packet_to_send;
         int scenario = scenario_dist(m_gen);
         switch (scenario)
         {
@@ -160,10 +159,10 @@ void DroneDataSimulator::process_loop()
         {
             // Generate & Send a complete valid telemetry data
             generate_valid_telemetry_data(DRONE_NUM, random_data);
-            packet_to_send = build_telemetry_packet(random_data);
+            BytesArray packet_to_send = build_telemetry_packet(random_data);
             send(sock, packet_to_send.data(), packet_to_send.size(), 0);
             valid_packets_sent.push_back(packet_to_send);
-            if (LOG_LEVEL & LogLevel::DEBUG_NETWORK)
+            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
             {
                 std::cout << "[DroneDataSimulator] Send a full valid packet : ";
                 print_bytes_array_c_style(packet_to_send);
@@ -181,7 +180,7 @@ void DroneDataSimulator::process_loop()
             for (size_t i = 0; i < garbage_len; ++i)
                 garbage_packet[i] = static_cast<uint8_t>(byte_dist(m_gen)); // "uniform_int_distribution" must get type of minimum 16-bit, so cannot random nmber type of 1-byte. Instead, random 2-bytes integers in range of 1-byte-values (0-255) and convert them to 1 byte
             send(sock, garbage_packet.data(), garbage_packet.size(), 0);
-            if (LOG_LEVEL & LogLevel::DEBUG_NETWORK)
+            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
             {
                 std::cout << "[DroneDataSimulator] Send " << garbage_len << " bytes of garbage : ";
                 print_bytes_array_c_style(garbage_packet);
@@ -193,41 +192,34 @@ void DroneDataSimulator::process_loop()
         {
             // Generate a valid random packet and send it fragmented
             generate_valid_telemetry_data(DRONE_NUM, random_data);
-            packet_to_send = build_telemetry_packet(random_data);
-            if (packet_to_send.size() < 4) // there is nothing to split, because packet is only header and length (this case should not happen...)
+            BytesArray packet_to_send = build_telemetry_packet(random_data);
+            std::uniform_int_distribution<size_t> split_dist(1, packet_to_send.size() - 1);
+            size_t split_idx = split_dist(m_gen);
+            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
             {
-                send(sock, packet_to_send.data(), packet_to_send.size(), 0);
+                std::cout << "[DroneDataSimulator] Send a valid packet, fragmented to " << split_idx << " & " << (packet_to_send.size() - split_idx) << " bytes : ";
+                print_bytes_array_c_style(packet_to_send);
             }
-            else
-            {
-                // choose the splitting point somewhere in the middle of the packet
-                std::uniform_int_distribution<size_t> split_dist(1, packet_to_send.size() - 1);
-                size_t split_idx = split_dist(m_gen);
-                // send the first part, wait a bit, then send the rest
-                send(sock, packet_to_send.data(), split_idx, 0);
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                send(sock, packet_to_send.data() + split_idx, packet_to_send.size() - split_idx, 0);
-                if (LOG_LEVEL & LogLevel::DEBUG_NETWORK)
-                {
-                    std::cout << "[DroneDataSimulator] Send a valid packet, fragmented to " << split_idx << " & " << (packet_to_send.size() - split_idx) << " bytes : ";
-                    print_bytes_array_c_style(packet_to_send);
-                }
-            }
+            // send the first part, wait a bit, then send the rest
+            send(sock, packet_to_send.data(), split_idx, 0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            send(sock, packet_to_send.data() + split_idx, packet_to_send.size() - split_idx, 0);
+            
             valid_packets_sent.push_back(packet_to_send);
             packet_to_send.clear();
+            
             break;
         }
         case 3:
         {
             // Generate a valid random packet, but corrupt its payload data, to simulate cases of incorrent CRC
             generate_valid_telemetry_data(DRONE_NUM, random_data);
-            packet_to_send = build_telemetry_packet(random_data);
+            BytesArray packet_to_send = build_telemetry_packet(random_data);
             bool corrupted = statistic_packet_corruption(packet_to_send, 50);
-            send(sock, packet_to_send.data(), packet_to_send.size(), 0);
             if (!corrupted)
             {
                 valid_packets_sent.push_back(packet_to_send);
-                if (LOG_LEVEL & LogLevel::DEBUG_NETWORK)
+                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
                 {
                     std::cout << "[DroneDataSimulator] Send a full valid packet : ";
                     print_bytes_array_c_style(packet_to_send);
@@ -235,13 +227,17 @@ void DroneDataSimulator::process_loop()
             }
             else
             {
-                if (LOG_LEVEL & LogLevel::DEBUG_NETWORK)
+                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
                 {   
                     std::cout << "[DroneDataSimulator] Send a packet with corrupted payload : ";
                     print_bytes_array_c_style(packet_to_send);
                 }
             }
+            
+            send(sock, packet_to_send.data(), packet_to_send.size(), 0);
+            
             packet_to_send.clear();
+            
             break;
         }
         case 4:
@@ -249,16 +245,22 @@ void DroneDataSimulator::process_loop()
             // Generate a sequence of multiple packets arriving in a single buffer (without a delay between them)
             std::uniform_int_distribution<int> amount_dist(2, 5);
             int amount = amount_dist(m_gen);
-            if (LOG_LEVEL & LogLevel::DEBUG_NETWORK) std::cout << "[DroneDataSimulator] Send sequence of " << amount << " full valid packets : ";
+            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) std::cout << "[DroneDataSimulator] Send sequence of " << amount << " full valid packets : ";
+            std::vector<BytesArray> packets_to_send;
             for (int i = 0; i < amount; i++)
             {
                 generate_valid_telemetry_data(DRONE_NUM, random_data);
-                packet_to_send = build_telemetry_packet(random_data);
-                send(sock, packet_to_send.data(), packet_to_send.size(), 0);
-                valid_packets_sent.push_back(packet_to_send);
-                if (LOG_LEVEL & LogLevel::DEBUG_NETWORK) print_bytes_array_c_style(packet_to_send);
-                packet_to_send.clear();
+                BytesArray packet = build_telemetry_packet(random_data);
+                packets_to_send.push_back(build_telemetry_packet(random_data));
+                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) print_bytes_array_c_style(packet);
             }
+            
+            for (auto packet : packets_to_send)
+            {
+                send(sock, packet.data(), packet.size(), 0);
+                valid_packets_sent.push_back(packet);
+            }
+            
             break;
         }
         default:

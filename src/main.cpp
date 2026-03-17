@@ -12,7 +12,7 @@
 
 // a global variable to control the program's running state, used for graceful shutdown for clean & stop all the program's threads correctly
 std::atomic<bool> g_keep_running_system{true};
-int LOG_LEVEL = LogLevel::PRODUCTION | LogLevel::DEBUG_PACKETS_FILTERRING;// | LogLevel::DEBUG_NETWORK;
+int LOG_LEVEL = LogLevel::PRODUCTION | LogLevel::DEBUG_PACKETS_FILTERRING | LogLevel::DEBUG_SIMULATOR;
 
 void signal_handler(int signal)
 {

@@ -53,7 +53,7 @@ void SensorDataConsumer::process_accumulated_data()
 {
     if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
     {
-        std::cout << "[SensorDataConsumer] Start processing this accumulated raw data : ";
+        std::cout << "[SensorDataConsumer] Start processing this accumulated raw data (" << m_accumulated_data.size() << " bytes): ";
         print_bytes_array_c_style(m_accumulated_data);
     }
     bool state_changed = true;

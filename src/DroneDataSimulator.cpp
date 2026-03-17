@@ -13,6 +13,11 @@ DroneDataSimulator::DroneDataSimulator()
 {
 }
 
+const std::vector<BytesArray>& DroneDataSimulator::sent_valid_packets() { return m_sent_valid_packets; }
+int DroneDataSimulator::fragmented_packets_amount() { return m_fragmented_packets_count; }
+int DroneDataSimulator::corrupted_packets_amount() { return m_corrupted_packets_count; }
+int DroneDataSimulator::garbage_sequences_amount() { return m_garbage_sequences_count; }
+
 BytesArray DroneDataSimulator::serialize_telemetry_data_to_bytes_sequence(const TelemetryData& t)
 {
     BytesArray payload;
@@ -161,13 +166,12 @@ void DroneDataSimulator::process_loop()
             generate_valid_telemetry_data(DRONE_NUM, random_data);
             BytesArray packet_to_send = build_telemetry_packet(random_data);
             send(sock, packet_to_send.data(), packet_to_send.size(), 0);
-            valid_packets_sent.push_back(packet_to_send);
+            m_sent_valid_packets.push_back(packet_to_send);
             if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
             {
                 std::cout << "[DroneDataSimulator] Send a full valid packet : ";
                 print_bytes_array_c_style(packet_to_send);
             }
-            packet_to_send.clear();
             break;
         }
         case 1:
@@ -179,13 +183,17 @@ void DroneDataSimulator::process_loop()
             std::uniform_int_distribution<uint16_t> byte_dist(0, 255); 
             for (size_t i = 0; i < garbage_len; ++i)
                 garbage_packet[i] = static_cast<uint8_t>(byte_dist(m_gen)); // "uniform_int_distribution" must get type of minimum 16-bit, so cannot random nmber type of 1-byte. Instead, random 2-bytes integers in range of 1-byte-values (0-255) and convert them to 1 byte
-            send(sock, garbage_packet.data(), garbage_packet.size(), 0);
+            
+                send(sock, garbage_packet.data(), garbage_packet.size(), 0);
+            
             if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
             {
                 std::cout << "[DroneDataSimulator] Send " << garbage_len << " bytes of garbage : ";
                 print_bytes_array_c_style(garbage_packet);
             }
-            garbage_packet.clear();
+
+            m_garbage_sequences_count++;
+
             break;
         }
         case 2:
@@ -205,9 +213,9 @@ void DroneDataSimulator::process_loop()
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             send(sock, packet_to_send.data() + split_idx, packet_to_send.size() - split_idx, 0);
             
-            valid_packets_sent.push_back(packet_to_send);
-            packet_to_send.clear();
-            
+            m_sent_valid_packets.push_back(packet_to_send);
+            m_fragmented_packets_count++;
+
             break;
         }
         case 3:
@@ -218,7 +226,7 @@ void DroneDataSimulator::process_loop()
             bool corrupted = statistic_packet_corruption(packet_to_send, 50);
             if (!corrupted)
             {
-                valid_packets_sent.push_back(packet_to_send);
+                m_sent_valid_packets.push_back(packet_to_send);
                 if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
                 {
                     std::cout << "[DroneDataSimulator] Send a full valid packet : ";
@@ -227,6 +235,7 @@ void DroneDataSimulator::process_loop()
             }
             else
             {
+                m_corrupted_packets_count++;
                 if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
                 {   
                     std::cout << "[DroneDataSimulator] Send a packet with corrupted payload : ";
@@ -235,9 +244,7 @@ void DroneDataSimulator::process_loop()
             }
             
             send(sock, packet_to_send.data(), packet_to_send.size(), 0);
-            
-            packet_to_send.clear();
-            
+                        
             break;
         }
         case 4:
@@ -258,7 +265,7 @@ void DroneDataSimulator::process_loop()
             for (auto packet : packets_to_send)
             {
                 send(sock, packet.data(), packet.size(), 0);
-                valid_packets_sent.push_back(packet);
+                m_sent_valid_packets.push_back(packet);
             }
             
             break;

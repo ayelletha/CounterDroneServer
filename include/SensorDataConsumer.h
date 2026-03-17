@@ -28,6 +28,7 @@ private:
     ParserState m_state;
     uint16_t m_expected_payload_length;
 
+    std::vector<BytesArray> m_received_valid_packets;
     int m_crc_errors_count;        // counts the cases of Payload or CRC byte corrupted
     int m_invalid_structure_count; // counts the cases Garbage, or corrupted Header/Length leading to loss of sync
 
@@ -48,9 +49,12 @@ private:
     TelemetryData deserialize_payload(const BytesArray& buffer, size_t start_idx);
 
 public:
-    std::vector<BytesArray> valid_packets_received;
 
     SensorDataConsumer(ThreadsSharedDataManager<BytesArray>& raw_data_manager, 
                        ThreadsSharedDataManager<TelemetryData>& packets_manager);
     void process_loop();
+
+    const std::vector<BytesArray>& received_valid_packets();
+    int crc_errors_amount();
+    int invalid_structure_amount();
 };

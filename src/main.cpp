@@ -32,7 +32,7 @@ int main()
     
     std::vector<BytesArray> valid_packets_sent;
 
-    DroneDataSimulator drondata_simulator;
+    DroneDataSimulator drone_data_simulator;
     DroneDataSensor drone_data_sensor(m_shared_raw_data_manager);
     SensorDataConsumer sensor_data_consumer(m_shared_raw_data_manager, m_shared_telemetry_packets_manager);
     TelemetryDataProcessor packets_processor(m_shared_telemetry_packets_manager);
@@ -41,7 +41,7 @@ int main()
 
     std::cout << "Start running threads...\n";
 
-    thread_pool.emplace_back(&DroneDataSimulator::process_loop, &drondata_simulator);
+    thread_pool.emplace_back(&DroneDataSimulator::process_loop, &drone_data_simulator);
     thread_pool.emplace_back(&DroneDataSensor::process_loop, &drone_data_sensor);
     thread_pool.emplace_back(&SensorDataConsumer::process_loop, &sensor_data_consumer);
     thread_pool.emplace_back(&TelemetryDataProcessor::process_loop, &packets_processor);
@@ -57,6 +57,12 @@ int main()
         if (t.joinable())
             t.join();
 
+    std::cout << "[System] --- Traffic Conclusion ---\n"
+              << "         " << drone_data_simulator.sent_valid_packets().size() + drone_data_simulator.corrupted_packets_amount() << " packets sent, of which:\n"
+              << "            " << drone_data_simulator.fragmented_packets_amount() << " valid but fragmented\n"
+              << "            " << drone_data_simulator.corrupted_packets_amount() << " corrupted\n"
+              << "       + " << drone_data_simulator.garbage_sequences_amount() << " garbage sequences in between those\n\n";
+              
     std::cout << "[System] Counter-Drone-System is stopped...\n";
     return 0;
 }

@@ -13,11 +13,15 @@ SensorDataConsumer::SensorDataConsumer(
 {
 }
 
+const std::vector<BytesArray>& SensorDataConsumer::received_valid_packets() { return m_received_valid_packets; }
+int SensorDataConsumer::crc_errors_amount() { return m_crc_errors_count; }
+int SensorDataConsumer::invalid_structure_amount() { return m_invalid_structure_count; }
+
 void SensorDataConsumer::process_loop()
 {
     while (g_keep_running_system)
     {
-        // This will hold multiple chunks of BytesArray popped from the queue
+        // This will hold all the bytes chunks exist in the shared raw data queue
         std::vector<BytesArray> new_data_chunks;
         
         // wait (blocks) until there is some data in m_shared_raw_data_manager, and once it has - pull ALL currently available chunks togather.
@@ -25,7 +29,7 @@ void SensorDataConsumer::process_loop()
         {
             size_t total_new_bytes = 0;
 
-            // Concatenate all chunks into our single accumulated buffer
+            // Concatenate all chunks into our single accumulated buffer (all bytes, flatted)
             for (auto& chunk : new_data_chunks)
             {
                 total_new_bytes += chunk.size();
@@ -67,6 +71,9 @@ void SensorDataConsumer::process_accumulated_data()
         {
             case ParserState::WAIT_FOR_SYNC:
             {
+                /*  At this state the parser trying to find a legal header (0xAA55), by passing over the m_accumulated_data byte after byte, starting from the first byte of the sequence.
+                    When find, it means that all the bytes before this header are garbage so the parser erases them from the sequence, and change the machine-state to READ_LENGTH. 
+                */
                 size_t sync_index = 0;
                 bool sync_found = false;
                 
@@ -157,7 +164,7 @@ void SensorDataConsumer::process_accumulated_data()
                     if (calculated_crc == received_crc)
                     {
                         // Valid packet! Deserialize and push to the shared_telemetry_packets's queue
-                        valid_packets_received.push_back(m_accumulated_data);
+                        m_received_valid_packets.push_back(m_accumulated_data);
                         TelemetryData data = deserialize_payload(m_accumulated_data, 4);
                         m_shared_telemetry_packets_manager.push_data(data);
                         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)

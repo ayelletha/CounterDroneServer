@@ -13,6 +13,11 @@ private:
     std::mt19937 m_gen;
     const int DRONE_NUM{1};
     const int CORRUPTION_PERCENTS{10};
+    
+    std::vector<BytesArray> m_sent_valid_packets;
+    int m_fragmented_packets_count = 0;
+    int m_corrupted_packets_count = 0;
+    int m_garbage_sequences_count = 0;
 
     void generate_valid_telemetry_data(const int drone_num, TelemetryData& data);
     BytesArray serialize_telemetry_data_to_bytes_sequence(const TelemetryData& data);
@@ -20,8 +25,12 @@ private:
     bool statistic_packet_corruption(BytesArray& packet, int corruption_percentage);
 
 public:
-    std::vector<BytesArray> valid_packets_sent;
 
     explicit DroneDataSimulator();
     void process_loop();
+
+    const std::vector<BytesArray>& sent_valid_packets();
+    int fragmented_packets_amount();
+    int corrupted_packets_amount();
+    int garbage_sequences_amount();
 };

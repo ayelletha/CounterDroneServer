@@ -73,8 +73,10 @@ BytesArray DroneDataSimulator::build_telemetry_packet(const TelemetryData& data)
     return packet;
 }
 
-void DroneDataSimulator::generate_valid_telemetry_data(const int drone_num, TelemetryData& data)
+void DroneDataSimulator::generate_valid_telemetry_data(TelemetryData& data)
 {
+    std::uniform_int_distribution<uint16_t> drone_num_dist(1, 5);
+    uint16_t drone_num = drone_num_dist(m_gen);
     data.drone_id = "DRN-"+std::to_string(drone_num);
 
     std::uniform_real_distribution<double> lat_dist(32.0500, 32.1500);
@@ -113,11 +115,6 @@ bool DroneDataSimulator::statistic_packet_corruption(BytesArray& packet, int cor
 
 void DroneDataSimulator::process_loop()
 {
-    /*
-    We can expand this logic to simulate multiple drones by creating multiple threads of this process_loop, each with a different drone_num, 
-    but for simplicity we will simulate only one drone here (DRONE_NUM set to 1)
-    */
-
     // Wait a bit for letting 'DroneDataSensor' to start and be ready for accepting connections, before we try to connect to it.
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -163,7 +160,7 @@ void DroneDataSimulator::process_loop()
         case 0:
         {
             // Generate & Send a complete valid telemetry data
-            generate_valid_telemetry_data(DRONE_NUM, random_data);
+            generate_valid_telemetry_data(random_data);
             BytesArray packet_to_send = build_telemetry_packet(random_data);
             send(sock, packet_to_send.data(), packet_to_send.size(), 0);
             m_sent_valid_packets.push_back(packet_to_send);
@@ -199,7 +196,7 @@ void DroneDataSimulator::process_loop()
         case 2:
         {
             // Generate a valid random packet and send it fragmented
-            generate_valid_telemetry_data(DRONE_NUM, random_data);
+            generate_valid_telemetry_data(random_data);
             BytesArray packet_to_send = build_telemetry_packet(random_data);
             std::uniform_int_distribution<size_t> split_dist(1, packet_to_send.size() - 1);
             size_t split_idx = split_dist(m_gen);
@@ -221,7 +218,7 @@ void DroneDataSimulator::process_loop()
         case 3:
         {
             // Generate a valid random packet, but corrupt its payload data, to simulate cases of incorrent CRC
-            generate_valid_telemetry_data(DRONE_NUM, random_data);
+            generate_valid_telemetry_data(random_data);
             BytesArray packet_to_send = build_telemetry_packet(random_data);
             bool corrupted = statistic_packet_corruption(packet_to_send, 50);
             if (!corrupted)
@@ -256,7 +253,7 @@ void DroneDataSimulator::process_loop()
             std::vector<BytesArray> packets_to_send;
             for (int i = 0; i < amount; i++)
             {
-                generate_valid_telemetry_data(DRONE_NUM, random_data);
+                generate_valid_telemetry_data(random_data);
                 BytesArray packet = build_telemetry_packet(random_data);
                 packets_to_send.push_back(build_telemetry_packet(random_data));
                 if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) print_bytes_array_c_style(packet);

@@ -29,7 +29,7 @@ public:
     }
 
     /**
-     * Pop data from the shared queue
+     * Pop the first data from the shared queue
      * @param item - reference where to store the popped data
      * @return true if data was successfully popped, false if the queue is empty and not active
      */
@@ -47,6 +47,31 @@ public:
 
         item = std::move(m_shared_data.front()); // use "move" instead copy for better performance (time)
         m_shared_data.pop(); // the first data unit was taken, so we can pop it from the queue
+
+        return true;
+    }
+
+    /**
+     * Fetch all currently available items in the queue at once (Batch Processing).
+        If the queue is empty, it blocks and waits until at least one item arrives.
+    */
+    bool pop_all(std::vector<T>& items)
+    {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        
+        // The thread that calls pop() will wait here until either there is data in the queue or the program is stopped (for example, by Ctrl+C or system interrupt),
+        m_cond_var.wait(lock, [this]() { return !m_shared_data.empty() || !g_keep_running_system; });
+
+        // Graceful shutdown check
+        if (!g_keep_running_system && m_shared_data.empty())
+            return false;
+
+        // Drain the entire queue into the provided vector in a single lock operation
+        while (!m_shared_data.empty())
+        {
+            items.push_back(std::move(m_shared_data.front()));
+            m_shared_data.pop();
+        }
 
         return true;
     }

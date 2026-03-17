@@ -15,7 +15,6 @@ private:
     const int CORRUPTION_PERCENTS{10};
 
     void generate_valid_telemetry_data(const int drone_num, TelemetryData& data);
-    uint16_t calculate_crc16(const std::vector<uint8_t>& data);
     BytesArray serialize_telemetry_data_to_bytes_sequence(const TelemetryData& data);
     BytesArray build_telemetry_packet(const TelemetryData& data);
     bool statistic_packet_corruption(BytesArray& packet, int corruption_percentage);

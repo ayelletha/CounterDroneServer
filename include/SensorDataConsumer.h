@@ -13,6 +13,11 @@ enum class ParserState
     READ_PAYLOAD
 };
 
+// According to the telemertry-data structure the payload is expected to be 40 bytes + the length of the drone_id string,
+// so we can filter corruptions also according to LENGTH value valid range
+constexpr int MIN_PAYLOAD_EXP_LENGTH = 40; // bytes
+constexpr int MAX_PAYLOAD_EXP_LENGTH = 80; // bytes
+
 class SensorDataConsumer
 {
 private:
@@ -38,15 +43,13 @@ private:
     void process_accumulated_data();
 
     /**
-     * Calculate the expected CRC according to the payload's data we read
-     */
-    uint16_t calculate_crc16(const uint8_t* data, size_t length);
-    /**
      * Extract the telemetry data from valid packets found in the raw-data buffer, and pack it into a 'TelemetryData' structure for processing in 'TelemetryDataProccessor'
      */
     TelemetryData deserialize_payload(const BytesArray& buffer, size_t start_idx);
 
 public:
+    std::vector<BytesArray> valid_packets_received;
+
     SensorDataConsumer(ThreadsSharedDataManager<BytesArray>& raw_data_manager, 
                        ThreadsSharedDataManager<TelemetryData>& packets_manager);
     void process_loop();

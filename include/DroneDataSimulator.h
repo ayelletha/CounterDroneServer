@@ -10,7 +10,7 @@ extern std::atomic<bool> g_keep_running_system; // the same global variable defi
 class DroneDataSimulator
 {
 private:
-    const int DATA_SENDING_FREQUENCY_MS = 1000; // send something on the TCP pipe every X milliseconds. For convenience of checking system's action, I set it to send only 1 data chunk every second
+    const int DATA_SENDING_FREQUENCY_MS = 1; // send something on the TCP pipe every X milliseconds. For convenience of checking system's action, I set it to send only 1 data chunk every second
 
     std::mt19937 m_gen;
     

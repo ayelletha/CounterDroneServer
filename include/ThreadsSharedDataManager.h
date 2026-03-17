@@ -8,6 +8,9 @@
 
 extern std::atomic<bool> g_keep_running_system; // the same global variable defined in main.cpp
 
+/**
+ * This class is a general template to implement a machanism of thread-safe sharring data
+ */
 template <typename T>
 class ThreadsSharedDataManager
 {

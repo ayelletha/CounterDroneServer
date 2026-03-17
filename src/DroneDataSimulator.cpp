@@ -99,10 +99,10 @@ bool DroneDataSimulator::statistic_packet_corruption(BytesArray& packet, int cor
 
     if (chance_range(m_gen) <= corruption_chance)
     {
-        // When the corrupting is at the first 4 bytes of the packet (i.e. at the header/length)
+        // When the corrupting is at the third/forth bytes of the packet (i.e. at the length)
         //     - it may cause to a severe(!!) loss of synchronization with packet boundaries.
         // Otherwise, it simulates the scenario of corruption in the payload's data & CRC ...
-        std::uniform_int_distribution<size_t> byte_dist(0, packet.size() - 1);
+        std::uniform_int_distribution<size_t> byte_dist(2, packet.size() - 1);
         size_t target_byte = byte_dist(m_gen);
         
         std::uniform_int_distribution<> bit_dist(0, 7);

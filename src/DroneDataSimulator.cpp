@@ -285,6 +285,8 @@ void DroneDataSimulator::process_loop()
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
+    // Ensure cleanup before finish this current thread
     close(sock);
-    std::cout << "[DroneDataSimulator] Terminate the simulator thread\n";
+    
+    std::cout << "[DroneDataSimulator] Terminate thread\n";
 }

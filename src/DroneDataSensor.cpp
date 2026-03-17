@@ -7,7 +7,7 @@
 #include <cstdint>
 
 DroneDataSensor::DroneDataSensor(ThreadsSharedDataManager<BytesArray>& manager)
-    : m_raw_data_queue(manager)
+    : m_shared_raw_data_manager(manager)
 {
 }
 
@@ -16,8 +16,8 @@ DroneDataSensor::~DroneDataSensor()
     if (m_sensor_connections_socket_num >= 0)
     {
         close(m_sensor_connections_socket_num);
+        std::cout << "[DroneDataSensor] Distruct DroneDataSensor: main listening socket " << m_sensor_connections_socket_num << " was closed successfully.\n";
         m_sensor_connections_socket_num = -1;
-        std::cout << "[DroneDataSensor] Main listening socket closed successfully.\n";
     }
 }
 
@@ -74,6 +74,19 @@ void DroneDataSensor::process_loop()
         return;
     }
 
+    auto delete_inactive_threads = [&]()
+    {
+        // Clean threads of drones that were disconnected and their threads were finished, to avoid memory leak and too many "zombee" threads in the system
+        for (auto it = m_drones_data_rcv_threads.begin(); it != m_drones_data_rcv_threads.end(); )
+        {
+            // check if the specific drone's communication thread is finished
+            if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                it = m_drones_data_rcv_threads.erase(it);
+            else
+                ++it;
+        }
+    };
+
     // Loop for establish connection pipe(s) for listening to drone(s)
     while (g_keep_running_system)
     {
@@ -90,18 +103,16 @@ void DroneDataSensor::process_loop()
             );
         }
 
-        // Clean threads of drones that were disconnected and their threads were finished, to avoid memory leak and too many "zombee" threads in the system
-        for (auto it = m_drones_data_rcv_threads.begin(); it != m_drones_data_rcv_threads.end(); )
-        {
-            // check if the specific drone's communication thread is finished
-            if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-                it = m_drones_data_rcv_threads.erase(it);
-            else
-                ++it;
-        }
+        delete_inactive_threads();
     }
     
-    std::cout << "[DroneDataSensor] Terminate thread of waiting to accept a new drone conection\n";
+    // Ensure cleanup & release other threads blocking, before finish this current thread
+    m_shared_raw_data_manager.wake_up_all();
+    close(m_sensor_connections_socket_num);
+    auto closed_socket_num = m_sensor_connections_socket_num;
+    m_sensor_connections_socket_num = -1;
+
+    std::cout << "[DroneDataSensor] Close socket " << closed_socket_num << " of waiting to accept a new drone conection & Terminate thread\n";
 }
 
 void DroneDataSensor::listen_for_single_drone(int drone_specific_socket_num)
@@ -129,17 +140,14 @@ void DroneDataSensor::listen_for_single_drone(int drone_specific_socket_num)
                 std::cout << "[DroneDataSensor] Receive " << bytes_read << " bytes of data : ";
                 print_bytes_array_c_style(data_chunk);
             }
-            m_raw_data_queue.push_data(std::move(data_chunk));
+            m_shared_raw_data_manager.push_data(std::move(data_chunk));
         }
-        else if (bytes_read == 0)
-        {
-            std::cout << "[DroneDataSensor] Drone disconnected from socket " << drone_specific_socket_num << ".\n";
+        if (bytes_read == 0)
             break; 
-        }
     }
 
     // Get here if system should be terminated OR current client was disconnected, so need to safely clean the connection to this client
     close(drone_specific_socket_num);
 
-    std::cout << "[DroneDataSensor] Terminate thread of listening to drone packets on socket " << drone_specific_socket_num << "\n";
+    std::cout << "[DroneDataSensor] " << (!g_keep_running_system ? "System shut-down event -> " : "Drone disconnected -> ") << " Close socket " << drone_specific_socket_num << " of listening to drone's packets & Terminate thread\n";
 }

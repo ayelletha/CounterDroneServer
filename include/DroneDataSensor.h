@@ -11,7 +11,7 @@ class DroneDataSensor
 private:
     int m_sensor_connections_socket_num = -1;
     std::vector<std::future<void>> m_drones_data_rcv_threads;
-    ThreadsSharedDataManager<BytesArray>& m_raw_data_queue; // Pay Attention! this is a REFFERENCE type !
+    ThreadsSharedDataManager<BytesArray>& m_shared_raw_data_manager; // Pay Attention! this is a REFFERENCE type !
 
 public:
     explicit DroneDataSensor(ThreadsSharedDataManager<BytesArray>& manager);

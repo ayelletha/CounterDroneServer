@@ -33,7 +33,7 @@ public:
      * @param item - reference where to store the popped data
      * @return true if data was successfully popped, false if the queue is empty and not active
      */
-    bool pop(T& item)
+    bool pop_data(T& item)
     {
         std::unique_lock<std::mutex> lock(m_mutex);
         

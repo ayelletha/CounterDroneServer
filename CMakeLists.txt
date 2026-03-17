@@ -17,7 +17,7 @@ add_executable(drone_server
     src/DroneDataSimulator.cpp
     src/DroneDataSensor.cpp
     src/SensorDataConsumer.cpp
-    src/TelemetryPacketsProcessor.cpp)
+    src/TelemetryDataProcessor.cpp)
 
 target_include_directories(drone_server PRIVATE ${CMAKE_SOURCE_DIR}/include)
 

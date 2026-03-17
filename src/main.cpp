@@ -8,11 +8,11 @@
 #include "DroneDataSimulator.h"
 #include "DroneDataSensor.h"
 #include "SensorDataConsumer.h"
-#include "TelemetryPacketsProcessor.h"
+#include "TelemetryDataProcessor.h"
 
 // a global variable to control the program's running state, used for graceful shutdown for clean & stop all the program's threads correctly
 std::atomic<bool> g_keep_running_system{true};
-int LOG_LEVEL = LogLevel::PRODUCTION;// | LogLevel::DEBUG_NETWORK;
+int LOG_LEVEL = LogLevel::PRODUCTION | LogLevel::DEBUG_PACKETS_FILTERRING;// | LogLevel::DEBUG_NETWORK;
 
 void signal_handler(int signal)
 {
@@ -27,15 +27,15 @@ int main()
 
     std::cout << "Uploading Counter-Drone-System...\n";
 
-    ThreadsSharedDataManager<BytesArray> raw_data_queue;
-    ThreadsSharedDataManager<TelemetryPacket> telemetry_data_queue;
+    ThreadsSharedDataManager<BytesArray> m_shared_raw_data_manager;
+    ThreadsSharedDataManager<TelemetryData> m_shared_telemetry_packets_manager;
     
     std::vector<BytesArray> valid_packets_sent;
 
     DroneDataSimulator drondata_simulator;
-    DroneDataSensor drone_data_sensor(raw_data_queue);
-    SensorDataConsumer sensor_data_consumer(raw_data_queue, telemetry_data_queue);
-    TelemetryPacketsProcessor packets_processor(telemetry_data_queue);
+    DroneDataSensor drone_data_sensor(m_shared_raw_data_manager);
+    SensorDataConsumer sensor_data_consumer(m_shared_raw_data_manager, m_shared_telemetry_packets_manager);
+    TelemetryDataProcessor packets_processor(m_shared_telemetry_packets_manager);
 
     std::vector<std::thread> thread_pool;
 
@@ -44,7 +44,7 @@ int main()
     thread_pool.emplace_back(&DroneDataSimulator::process_loop, &drondata_simulator);
     thread_pool.emplace_back(&DroneDataSensor::process_loop, &drone_data_sensor);
     thread_pool.emplace_back(&SensorDataConsumer::process_loop, &sensor_data_consumer);
-    thread_pool.emplace_back(&TelemetryPacketsProcessor::process_loop, &packets_processor);
+    thread_pool.emplace_back(&TelemetryDataProcessor::process_loop, &packets_processor);
     
     while (g_keep_running_system)
     {

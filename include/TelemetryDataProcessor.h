@@ -3,15 +3,14 @@
 
 extern std::atomic<bool> g_keep_running_system; // the same global variable defined in main.cpp
 
-class TelemetryPacketsProcessor
+class TelemetryDataProcessor
 {
 private:
-        ThreadsSharedDataManager<TelemetryPacket>& m_packets_manager; // Pay Attention! this is a REFFERENCE type !
-
+    ThreadsSharedDataManager<TelemetryData>& m_shared_telemetry_packets_manager; // payload-data of parsed valid telemetry packets that found inside the raw bytes sequence
 public:
 
-    explicit TelemetryPacketsProcessor(ThreadsSharedDataManager<TelemetryPacket>& manager)
-        : m_packets_manager(manager)
+    explicit TelemetryDataProcessor(ThreadsSharedDataManager<TelemetryData>& manager)
+        : m_shared_telemetry_packets_manager(manager)
     {
     }
     

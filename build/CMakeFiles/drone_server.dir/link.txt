@@ -1,1 +1,0 @@
-/usr/bin/g++   -Wall -Wextra -Wpedantic   CMakeFiles/drone_server.dir/src/main.cpp.o CMakeFiles/drone_server.dir/src/DroneDataSimulator.cpp.o CMakeFiles/drone_server.dir/src/DroneDataSensor.cpp.o CMakeFiles/drone_server.dir/src/SensorDataConsumer.cpp.o CMakeFiles/drone_server.dir/src/TelemetryPacketsProcessor.cpp.o  -o drone_server  -lpthread 

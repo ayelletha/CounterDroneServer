@@ -1,3 +1,0 @@
-/home/ayellethashahar/VS/CounterDroneServer/build/CMakeFiles/rebuild_cache.dir
-/home/ayellethashahar/VS/CounterDroneServer/build/CMakeFiles/edit_cache.dir
-/home/ayellethashahar/VS/CounterDroneServer/build/CMakeFiles/drone_server.dir

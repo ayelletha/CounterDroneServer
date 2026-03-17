@@ -155,7 +155,7 @@ void SensorDataConsumer::process_accumulated_data()
                 if (m_accumulated_data.size() >= total_packet_size)
                 {
                     // Calculate CRC over Header + Length + Payload
-                    BytesArray package_data_without_crc(m_accumulated_data.begin(), m_accumulated_data.end()-2);
+                    BytesArray package_data_without_crc(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size - 2);
                     uint16_t calculated_crc = calculate_crc16(package_data_without_crc);
                     
                     // Extract the received CRC from the end of the packet
@@ -164,7 +164,12 @@ void SensorDataConsumer::process_accumulated_data()
                     if (calculated_crc == received_crc)
                     {
                         // Valid packet! Deserialize and push to the shared_telemetry_packets's queue
-                        m_received_valid_packets.push_back(m_accumulated_data);
+                        // Extract strictly the bytes belonging to this valid packet for logging
+                        BytesArray current_valid_packet_bytes(
+                            m_accumulated_data.begin(), 
+                            m_accumulated_data.begin() + total_packet_size
+                        );
+                        m_received_valid_packets.push_back(current_valid_packet_bytes);
                         TelemetryData data = deserialize_payload(m_accumulated_data, 4);
                         m_shared_telemetry_packets_manager.push_data(data);
                         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)

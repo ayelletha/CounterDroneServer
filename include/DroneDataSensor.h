@@ -19,5 +19,5 @@ public:
 
     bool init_tcp_communication_pipe();
     void process_loop();
-    void listen_for_single_drone(int drone_specific_socket_num);
+    void listen_on_spesific_socket(int socket_num);
 };

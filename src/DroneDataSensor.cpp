@@ -99,7 +99,7 @@ void DroneDataSensor::process_loop()
         {
             std::cout << "[DroneDataSensor] New Drone connected!\n";
             m_drones_data_rcv_threads.push_back(
-                std::async(std::launch::async, &DroneDataSensor::listen_for_single_drone, this, new_data_socket)
+                std::async(std::launch::async, &DroneDataSensor::listen_on_spesific_socket, this, new_data_socket)
             );
         }
 
@@ -112,25 +112,25 @@ void DroneDataSensor::process_loop()
     auto closed_socket_num = m_sensor_connections_socket_num;
     m_sensor_connections_socket_num = -1;
 
-    std::cout << "[DroneDataSensor] Close socket " << closed_socket_num << " of waiting to accept a new drone conection & Terminate thread\n";
+    std::cout << "[DroneDataSensor] Close socket " << closed_socket_num << " of waiting to accept a new connections & Terminate thread\n";
 }
 
-void DroneDataSensor::listen_for_single_drone(int drone_specific_socket_num)
+void DroneDataSensor::listen_on_spesific_socket(int socket_num)
 {
     // Set a timeout for this drone's socket, for avoiding infinite blocking on 'recv' function when should terminate the entire system (what can be triggered by user/system interrupt)
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 500000; // half second
-    setsockopt(drone_specific_socket_num, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv)); 
+    setsockopt(socket_num, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv)); 
     
     std::array<uint8_t, RECV_BUFFER_SIZE> buffer;
 
-    std::cout << "[DroneDataSensor] Start wait to drone's data on socket " << drone_specific_socket_num << "...\n";
+    std::cout << "[DroneDataSensor] Start wait to drone's data on socket " << socket_num << "...\n";
 
     // Loop for listenning data that receive from a specific drone on the specific port
     while (g_keep_running_system) 
     {
-        int bytes_read = recv(drone_specific_socket_num, buffer.data(), buffer.size(), 0);
+        int bytes_read = recv(socket_num, buffer.data(), buffer.size(), 0);
         if (bytes_read > 0)
         {
             BytesArray data_chunk(buffer.data(), buffer.data() + bytes_read);
@@ -142,12 +142,10 @@ void DroneDataSensor::listen_for_single_drone(int drone_specific_socket_num)
             }
             m_shared_raw_data_manager.push_data(std::move(data_chunk));
         }
-        if (bytes_read == 0)
-            break; 
     }
 
-    // Get here if system should be terminated OR current client was disconnected, so need to safely clean the connection to this client
-    close(drone_specific_socket_num);
+    // Ensure safely clean the connection to this client on this specific socket
+    close(socket_num);
 
-    std::cout << "[DroneDataSensor] " << (!g_keep_running_system ? "System shut-down event -> " : "Drone disconnected -> ") << " Close socket " << drone_specific_socket_num << " of listening to drone's packets & Terminate thread\n";
+    std::cout << "[DroneDataSensor] System shut-down event -> Close socket " << socket_num << " of listening to drone's packets & Terminate thread\n";
 }

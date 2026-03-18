@@ -1,4 +1,4 @@
-# Counter Drone Telemetry Server
+# Counter Drone System
 
 ## Overview
 This project implements a high-performance, multithreaded TCP server in C++ designed to receive, parse, and monitor real-time telemetry data from a fleet of drones. 
@@ -23,9 +23,15 @@ The system is built to handle fragmented network streams, gracefully recover fro
 * GCC/G++ Compiler with C++17 support
 * CMake (Version 3.10 or higher)
 
-## Build and Run Instructions
-The project includes a unified shell script to handle building and executing the server. 
+## Download, Build and Run Instructions
 
-In Terminal, cd to the root directory of the project (`/CounterDroneServer/`), then simply run these two command :
-chmod +x run.sh
-./run.sh
+1. In terminal, create some folder wherever you want, and navigate into it:
+$ mkdir folder-name & cd folder-name/
+
+2. Clone the repository there:
+$ git clone https://github.com/ayelletha/CounterDroneServer.git
+
+3. The project includes a unified shell script to handle building and executing the server, so you can simply do:
+$ cd folder-name/CounterDroneServer/
+$ chmod +x run.sh (required only at the first time)
+$ ./run.sh

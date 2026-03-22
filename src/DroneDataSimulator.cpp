@@ -55,6 +55,8 @@ BytesArray DroneDataSimulator::build_telemetry_packet(const TelemetryData& data)
     packet.push_back(0xAA);
     packet.push_back(0x55);
 
+    packet.push_back(static_cast<uint8_t>(TypeMsg::TELEMETRY)); // Telemetry
+
     BytesArray payload = serialize_telemetry_data_to_bytes_sequence(data);
     
     // Append the payload's actual length, as uint16_t
@@ -102,7 +104,7 @@ bool DroneDataSimulator::statistic_packet_corruption(BytesArray& packet, int cor
         // When the corrupting is at the third/forth bytes of the packet (i.e. at the length)
         //     - it may cause to a severe(!!) loss of synchronization with packet boundaries.
         // Otherwise, it simulates the scenario of corruption in the payload's data & CRC ...
-        std::uniform_int_distribution<size_t> byte_dist(2, packet.size() - 1);
+        std::uniform_int_distribution<size_t> byte_dist(3, packet.size() - 1);
         size_t target_byte = byte_dist(m_gen);
         
         std::uniform_int_distribution<> bit_dist(0, 7);

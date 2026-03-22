@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <vector>
 
+typedef std::vector<uint8_t> BytesArray;
+
 enum LogLevel
 {
     PRODUCTION = 0,
@@ -13,7 +15,13 @@ enum LogLevel
 };
 extern int LOG_LEVEL;
 
-typedef std::vector<uint8_t> BytesArray;
+enum class TypeMsg : uint8_t
+{
+    UNKNOW = 0,
+    TELEMETRY = 1,
+    HEART_BEAT = 2,
+    COMMAND = 4
+};
 
 inline void print_bytes_array_c_style(const BytesArray& arr)
 {

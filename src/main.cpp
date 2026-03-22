@@ -13,7 +13,7 @@
 
 // a global variable to control the program's running state, used for graceful shutdown for clean & stop all the program's threads correctly
 std::atomic<bool> g_keep_running_system{true};
-int LOG_LEVEL = LogLevel::PRODUCTION /* | LogLevel::DEBUG_SIMULATOR | LogLevel::DEBUG_NETWORK | LogLevel::DEBUG_PACKETS_FILTERRING | LogLevel::DEBUG_VALID_PACKETS_BUSSINES_LOGIC*/;
+int LOG_LEVEL = LogLevel::PRODUCTION /*| LogLevel::DEBUG_SIMULATOR | LogLevel::DEBUG_NETWORK | LogLevel::DEBUG_PACKETS_FILTERRING | LogLevel::DEBUG_VALID_PACKETS_BUSSINES_LOGIC*/;
 
 void signal_handler(int signal)
 {
@@ -70,7 +70,11 @@ int main()
     std::cout << "Received :\n"
               << "  " << sensor_data_consumer.received_valid_packets().size() << " valid packets\n"
               << "  " << sensor_data_consumer.crc_errors_amount() << " packets with CRC errors\n"
-              << "  " << sensor_data_consumer.invalid_structure_amount() << " malformed packets (structural)\n";
+              << "  " << sensor_data_consumer.invalid_structure_amount() << " malformed packets (structural)\n"
+              << "  msg-types statistics:\n" 
+              << "    " << sensor_data_consumer.telemetry_pkt_count() << " telemetry data packets\n"
+              << "    " << sensor_data_consumer.heart_beat_pkt_count() << " heart-beat data packets\n"
+              << "    " << sensor_data_consumer.cmd_pkt_count() << " command data packets\n";
 
     std::cout << "\n\n";
     std::cout << std::string(20, '*') << " Drones Status " << std::string(20, '*') << "\n";

@@ -9,6 +9,7 @@ extern std::atomic<bool> g_keep_running_system;
 enum class ParserState
 {
     WAIT_FOR_SYNC,
+    READ_TYPE,
     READ_LENGTH,
     READ_PAYLOAD
 };
@@ -27,10 +28,14 @@ private:
     BytesArray m_accumulated_data;
     ParserState m_state;
     uint16_t m_expected_payload_length;
+    TypeMsg m_type = TypeMsg::UNKNOW;
 
     std::vector<BytesArray> m_received_valid_packets;
-    int m_crc_errors_count;        // counts the cases of Payload or CRC byte corrupted
-    int m_invalid_structure_count; // counts the cases Garbage, or corrupted Header/Length leading to loss of sync
+    int m_crc_errors_count = 0;        // counts the cases of Payload or CRC byte corrupted
+    int m_invalid_structure_count = 0; // counts the cases Garbage, or corrupted Header/Length leading to loss of sync
+    int m_telemetry_pkt_count = 0;
+    int m_heart_beat_pkt_count = 0;
+    int m_cmd_pkt_count = 0;
 
     /**
      * Implement a states-machine for extracting valid telemetry packets from the raw bytes sequence received.
@@ -42,6 +47,9 @@ private:
             - Loss of synchronization with packet boundaries
      */
     void process_accumulated_data();
+    void process_telemetry_payload(bool& state_changed, size_t total_packet_size);
+    void process_heart_beat_payload(bool& state_changed);
+    void process_command_payload(bool& state_changed);
 
     /**
      * Extract the telemetry data from valid packets found in the raw-data buffer, and pack it into a 'TelemetryData' structure for processing in 'TelemetryDataProccessor'
@@ -57,4 +65,7 @@ public:
     const std::vector<BytesArray>& received_valid_packets();
     int crc_errors_amount();
     int invalid_structure_amount();
+    int telemetry_pkt_count();
+    int heart_beat_pkt_count();
+    int cmd_pkt_count();
 };

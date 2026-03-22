@@ -16,6 +16,9 @@ SensorDataConsumer::SensorDataConsumer(
 const std::vector<BytesArray>& SensorDataConsumer::received_valid_packets() { return m_received_valid_packets; }
 int SensorDataConsumer::crc_errors_amount() { return m_crc_errors_count; }
 int SensorDataConsumer::invalid_structure_amount() { return m_invalid_structure_count; }
+int SensorDataConsumer::telemetry_pkt_count() { return m_telemetry_pkt_count; }
+int SensorDataConsumer::heart_beat_pkt_count() { return m_heart_beat_pkt_count; }
+int SensorDataConsumer::cmd_pkt_count() { return m_cmd_pkt_count; }
 
 void SensorDataConsumer::process_loop()
 {
@@ -51,6 +54,63 @@ void SensorDataConsumer::process_loop()
     m_shared_telemetry_packets_manager.wake_up_all();
     
     std::cout << "[SensorDataConsumer] Terminate thread\n";
+}
+
+void SensorDataConsumer::process_telemetry_payload(bool& state_changed, size_t total_packet_size)
+{
+    // Calculate CRC over Header + Length + Payload
+    BytesArray package_data_without_crc(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size - 2);
+    uint16_t calculated_crc = calculate_crc16(package_data_without_crc);
+    
+    // Extract the received CRC from the end of the packet
+    uint16_t received_crc = (m_accumulated_data[total_packet_size - 2] << 8) | m_accumulated_data[total_packet_size - 1];
+
+    if (calculated_crc == received_crc)
+    {
+        // Valid packet! Deserialize and push to the shared_telemetry_packets's queue
+        // Extract strictly the bytes belonging to this valid packet for logging
+        BytesArray current_valid_packet_bytes(
+            m_accumulated_data.begin(), 
+            m_accumulated_data.begin() + total_packet_size
+        );
+        m_received_valid_packets.push_back(current_valid_packet_bytes);
+        TelemetryData data = deserialize_payload(m_accumulated_data, 5);
+        m_shared_telemetry_packets_manager.push_data(data);
+        if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
+        {
+            std::cout << "[SensorDataConsumer] Valid package is found !!\n";
+        }
+        
+        // Erase the processed packet from the buffer to advance to the next one
+        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size);
+    }
+    else
+    {
+        // CRC mismatch (payload or CRC itself was corrupted)
+        m_crc_errors_count++;
+        if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
+        {
+            std::cerr << "[SensorDataConsumer] CRC validation failed! Total CRC errors: " 
+                    << m_crc_errors_count << ". Resyncing...\n";
+        }
+        
+        // Resynchronization approach: discard the first byte (0xAA) and search again
+        m_accumulated_data.erase(m_accumulated_data.begin());
+    }
+
+    // Return to sync state for the next packet
+    m_state = ParserState::WAIT_FOR_SYNC;
+    state_changed = true;
+}
+
+void SensorDataConsumer::process_heart_beat_payload(bool& state_changed)
+{
+
+}
+
+void SensorDataConsumer::process_command_payload(bool& state_changed)
+{
+
 }
 
 void SensorDataConsumer::process_accumulated_data()
@@ -94,7 +154,7 @@ void SensorDataConsumer::process_accumulated_data()
                         m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + sync_index);
                     
                     // Header found, advance to the next state
-                    m_state = ParserState::READ_LENGTH;
+                    m_state = ParserState::READ_TYPE;
                     state_changed = true; 
                 }
                 else
@@ -109,13 +169,60 @@ void SensorDataConsumer::process_accumulated_data()
                 break;
             }
 
+            case ParserState::READ_TYPE:
+            {
+                if (m_accumulated_data.size() >= 3)
+                {
+                    TypeMsg type_val = static_cast<TypeMsg>(m_accumulated_data[2]);
+                    // std::cout << m_accumulated_data[2] << "\n";
+                    switch (type_val)
+                    {
+                    case TypeMsg::TELEMETRY:
+                    {
+                        m_telemetry_pkt_count++;
+                        m_type = TypeMsg::TELEMETRY;
+                        m_state = ParserState::READ_LENGTH;
+                        state_changed = true;
+                        break;
+                    }
+                    case TypeMsg::HEART_BEAT:
+                    {
+                        m_heart_beat_pkt_count++;
+                        m_type = TypeMsg::HEART_BEAT;
+                        m_state = ParserState::READ_LENGTH;
+                        state_changed = true;
+                        break;
+                    }
+                    case TypeMsg::COMMAND:
+                    {
+                        m_cmd_pkt_count++;
+                        m_type = TypeMsg::COMMAND;
+                        m_state = ParserState::READ_LENGTH;
+                        state_changed = true;
+                        break;
+                    }
+                    case TypeMsg::UNKNOW:
+                    default:
+                    {
+                        //std::cout<<
+                        m_crc_errors_count++;
+                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+2);
+                        m_state = ParserState::WAIT_FOR_SYNC;
+                        state_changed = true;
+                        break;
+                    }
+                    }
+                }
+                break;
+            }
+            
             case ParserState::READ_LENGTH:
             {
                 // Wait until we have at least 4 bytes (2 for header + 2 for length)
-                if (m_accumulated_data.size() >= 4)
+                if (m_accumulated_data.size() >= 5)
                 {
                     // Extract the payload length (Big-Endian network order)
-                    m_expected_payload_length = (m_accumulated_data[2] << 8) | m_accumulated_data[3];
+                    m_expected_payload_length = (m_accumulated_data[3] << 8) | m_accumulated_data[4];
 
                     // Heuristic filter: check if the length makes sense for our telemetry packet (between 30 and 80 bytes)
                     if (m_expected_payload_length < MIN_PAYLOAD_EXP_LENGTH || m_expected_payload_length > MAX_PAYLOAD_EXP_LENGTH)
@@ -130,7 +237,7 @@ void SensorDataConsumer::process_accumulated_data()
                             
                         // Resynchronization approach (Sliding Window): 
                         // Discard ONLY the false 0xAA byte to resume sync search from the next byte
-                        m_accumulated_data.erase(m_accumulated_data.begin()); 
+                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+2); 
                         m_state = ParserState::WAIT_FOR_SYNC;
                     }
                     else
@@ -145,8 +252,8 @@ void SensorDataConsumer::process_accumulated_data()
 
             case ParserState::READ_PAYLOAD:
             {
-                // Total expected size: Header(2) + Length(2) + Payload + CRC(2)
-                size_t total_packet_size = 4 + m_expected_payload_length + 2;
+                // Total expected size: Header(2) + Type(1) + Length(2) + Payload + CRC(2)
+                size_t total_packet_size = 5 + m_expected_payload_length + 2;
 
                 // If current data is a fragmented packet - then do not process it yet,
                 //  but wait to the rest of the packet will be appended to 'm_accumulated_data' at the next chunk
@@ -154,49 +261,29 @@ void SensorDataConsumer::process_accumulated_data()
                 // The m_state remains READ_PAYLOAD, so once additional data will arrive - machine tries to execute this case again.
                 if (m_accumulated_data.size() >= total_packet_size)
                 {
-                    // Calculate CRC over Header + Length + Payload
-                    BytesArray package_data_without_crc(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size - 2);
-                    uint16_t calculated_crc = calculate_crc16(package_data_without_crc);
-                    
-                    // Extract the received CRC from the end of the packet
-                    uint16_t received_crc = (m_accumulated_data[total_packet_size - 2] << 8) | m_accumulated_data[total_packet_size - 1];
-
-                    if (calculated_crc == received_crc)
+                    switch (m_type)
                     {
-                        // Valid packet! Deserialize and push to the shared_telemetry_packets's queue
-                        // Extract strictly the bytes belonging to this valid packet for logging
-                        BytesArray current_valid_packet_bytes(
-                            m_accumulated_data.begin(), 
-                            m_accumulated_data.begin() + total_packet_size
-                        );
-                        m_received_valid_packets.push_back(current_valid_packet_bytes);
-                        TelemetryData data = deserialize_payload(m_accumulated_data, 4);
-                        m_shared_telemetry_packets_manager.push_data(data);
-                        if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
+                        case TypeMsg::TELEMETRY:
                         {
-                            std::cout << "[SensorDataConsumer] Valid package is found !!\n";
+                            process_telemetry_payload(state_changed, total_packet_size);
+                            break;
                         }
-                        
-                        // Erase the processed packet from the buffer to advance to the next one
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size);
-                    }
-                    else
-                    {
-                        // CRC mismatch (payload or CRC itself was corrupted)
-                        m_crc_errors_count++;
-                        if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
+                        case TypeMsg::HEART_BEAT:
                         {
-                            std::cerr << "[SensorDataConsumer] CRC validation failed! Total CRC errors: " 
-                                    << m_crc_errors_count << ". Resyncing...\n";
+                            process_heart_beat_payload(state_changed);
+                            break;
                         }
-                        
-                        // Resynchronization approach: discard the first byte (0xAA) and search again
-                        m_accumulated_data.erase(m_accumulated_data.begin());
+                        case TypeMsg::COMMAND:
+                        {
+                            process_command_payload(state_changed);
+                            break;
+                        }
+                        default:
+                        {
+                            std::cout << "[ERROR IN STATE MACHINE LOGIC]\n";
+                            break;
+                        }
                     }
-
-                    // Return to sync state for the next packet
-                    m_state = ParserState::WAIT_FOR_SYNC;
-                    state_changed = true;
                 }
                 else
                 {

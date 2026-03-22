@@ -51,9 +51,9 @@ BytesArray DroneDataSimulator::build_telemetry_packet(const TelemetryData& data)
 {
     BytesArray packet;
     
-    // Append the packet's Header 0xAA55 (Big-Endian network order)
-    packet.push_back(0xAA);
-    packet.push_back(0x55);
+    // Append the packet's Header (Big-Endian network order)
+    packet.push_back(HEADER_BYTES[0]);
+    packet.push_back(HEADER_BYTES[1]);
 
     packet.push_back(static_cast<uint8_t>(TypeMsg::TELEMETRY)); // Telemetry
 

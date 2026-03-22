@@ -140,7 +140,7 @@ void SensorDataConsumer::process_accumulated_data()
                 // Search for the valid header signature: 0xAA followed by 0x55
                 for (; sync_index < m_accumulated_data.size() - 1; ++sync_index)
                 {
-                    if (m_accumulated_data[sync_index] == 0xAA && m_accumulated_data[sync_index + 1] == 0x55)
+                    if (m_accumulated_data[sync_index] == HEADER_BYTES[0] && m_accumulated_data[sync_index + 1] == HEADER_BYTES[1])
                     {
                         sync_found = true;
                         break;
@@ -161,7 +161,7 @@ void SensorDataConsumer::process_accumulated_data()
                 {
                     // No complete header found in the current buffer.
                     // Keep the last byte ONLY if it's 0xAA, as 0x55 might arrive in the next chunk.
-                    if (m_accumulated_data.back() == 0xAA)
+                    if (m_accumulated_data.back() == HEADER_BYTES[0])
                         m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.end() - 1);
                     else
                         m_accumulated_data.clear();
@@ -171,9 +171,9 @@ void SensorDataConsumer::process_accumulated_data()
 
             case ParserState::READ_TYPE:
             {
-                if (m_accumulated_data.size() >= 3)
+                if (m_accumulated_data.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES))
                 {
-                    TypeMsg type_val = static_cast<TypeMsg>(m_accumulated_data[2]);
+                    TypeMsg type_val = static_cast<TypeMsg>(m_accumulated_data[TYPE_STARTING_IDX]);
                     // std::cout << m_accumulated_data[2] << "\n";
                     switch (type_val)
                     {
@@ -206,7 +206,8 @@ void SensorDataConsumer::process_accumulated_data()
                     {
                         //std::cout<<
                         m_crc_errors_count++;
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+2);
+                        // Erase only the header, because maybe at current byte (of the expected msg-type) will be a new header
+                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+HEADER_SIZE_BYTES);
                         m_state = ParserState::WAIT_FOR_SYNC;
                         state_changed = true;
                         break;
@@ -218,11 +219,11 @@ void SensorDataConsumer::process_accumulated_data()
             
             case ParserState::READ_LENGTH:
             {
-                // Wait until we have at least 4 bytes (2 for header + 2 for length)
-                if (m_accumulated_data.size() >= 5)
+                // Wait until we have at enough bytes before and including the length field
+                if (m_accumulated_data.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES + LENGTH_SIZE_BYTES))
                 {
                     // Extract the payload length (Big-Endian network order)
-                    m_expected_payload_length = (m_accumulated_data[3] << 8) | m_accumulated_data[4];
+                    m_expected_payload_length = (m_accumulated_data[LENGTH_STARTING_IDX] << 8) | m_accumulated_data[LENGTH_STARTING_IDX + 1];
 
                     // Heuristic filter: check if the length makes sense for our telemetry packet (between 30 and 80 bytes)
                     if (m_expected_payload_length < MIN_PAYLOAD_EXP_LENGTH || m_expected_payload_length > MAX_PAYLOAD_EXP_LENGTH)
@@ -236,8 +237,8 @@ void SensorDataConsumer::process_accumulated_data()
                         }
                             
                         // Resynchronization approach (Sliding Window): 
-                        // Discard ONLY the false 0xAA byte to resume sync search from the next byte
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+2); 
+                        // Erase only the bytes before the length field, to resume sync search from the next byte
+                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + HEADER_SIZE_BYTES); 
                         m_state = ParserState::WAIT_FOR_SYNC;
                     }
                     else
@@ -253,7 +254,7 @@ void SensorDataConsumer::process_accumulated_data()
             case ParserState::READ_PAYLOAD:
             {
                 // Total expected size: Header(2) + Type(1) + Length(2) + Payload + CRC(2)
-                size_t total_packet_size = 5 + m_expected_payload_length + 2;
+                size_t total_packet_size = HEADER_SIZE_BYTES + TYPE_SIZE_BYTES + LENGTH_SIZE_BYTES + m_expected_payload_length + CRC_SIZE_BYTES;
 
                 // If current data is a fragmented packet - then do not process it yet,
                 //  but wait to the rest of the packet will be appended to 'm_accumulated_data' at the next chunk

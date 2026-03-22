@@ -1,4 +1,5 @@
 #include "SensorDataConsumer.h"
+#include "Configuration.h"
 #include <cstring>
 
 SensorDataConsumer::SensorDataConsumer(

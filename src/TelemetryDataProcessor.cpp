@@ -1,4 +1,5 @@
 #include "TelemetryDataProcessor.h"
+#include "Configuration.h"
 #include "Generals.h"
 #include <iostream>
 

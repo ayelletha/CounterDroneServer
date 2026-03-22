@@ -1,4 +1,5 @@
 #include "DroneDataSensor.h"
+#include "Configuration.h"
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>

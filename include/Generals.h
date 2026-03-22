@@ -5,7 +5,7 @@
 
 typedef std::vector<uint8_t> BytesArray;
 
-enum LogLevel
+enum LogLevel : uint8_t
 {
     PRODUCTION = 0,
     DEBUG_SIMULATOR = 1,
@@ -13,7 +13,6 @@ enum LogLevel
     DEBUG_PACKETS_FILTERRING = 4,
     DEBUG_VALID_PACKETS_BUSSINES_LOGIC = 8
 };
-extern int LOG_LEVEL;
 
 enum class TypeMsg : uint8_t
 {

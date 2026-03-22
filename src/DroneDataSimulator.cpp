@@ -1,5 +1,5 @@
 #include "DroneDataSimulator.h"
-
+#include "Configuration.h"
 #include <iostream>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -152,129 +152,165 @@ void DroneDataSimulator::process_loop()
 
     std::cout << "[DroneDataSimulator] Connected successfully. Sending telemetry data...\n";
 
-    std::uniform_int_distribution<int> scenario_dist(0, 4);
-    while (g_keep_running_system)
+    int delay_ms = 0;
+    int batch_size = 1;
+    if (PKGS_RATE <= 1000.0) 
     {
-        TelemetryData random_data;
-        int scenario = scenario_dist(m_gen);
-        switch (scenario)
-        {
-        case 0:
-        {
-            // Generate & Send a complete valid telemetry data
-            generate_valid_telemetry_data(random_data);
-            BytesArray packet_to_send = build_telemetry_packet(random_data);
-            send(sock, packet_to_send.data(), packet_to_send.size(), 0);
-            m_sent_valid_packets.push_back(packet_to_send);
-            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
-            {
-                std::cout << "[DroneDataSimulator] Send a full valid packet : ";
-                print_bytes_array_c_style(packet_to_send);
-            }
-            break;
-        }
-        case 1:
-        {
-            // Generate & Send a completely random packet (garbage data) that does not follow the telemetry packet structure, to simulate extreme corruption or noise in the communication channel.
-            std::uniform_int_distribution<size_t> len_dist(5, 50);
-            size_t garbage_len = len_dist(m_gen);
-            BytesArray garbage_packet(garbage_len);
-            std::uniform_int_distribution<uint16_t> byte_dist(0, 255); 
-            for (size_t i = 0; i < garbage_len; ++i)
-                garbage_packet[i] = static_cast<uint8_t>(byte_dist(m_gen)); // "uniform_int_distribution" must get type of minimum 16-bit, so cannot random nmber type of 1-byte. Instead, random 2-bytes integers in range of 1-byte-values (0-255) and convert them to 1 byte
-            
-                send(sock, garbage_packet.data(), garbage_packet.size(), 0);
-            
-            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
-            {
-                std::cout << "[DroneDataSimulator] Send " << garbage_len << " bytes of garbage : ";
-                print_bytes_array_c_style(garbage_packet);
-            }
+        // Slow rate: Send 1 packet, sleep for X ms
+        delay_ms = static_cast<int>(1000.0 / PKGS_RATE);
+        batch_size = 1;
+    } 
+    else 
+    {
+        // High rate: Send X packets, sleep for 1 ms
+        delay_ms = 1;
+        batch_size = static_cast<int>(PKGS_RATE / 1000.0);
+    }
 
-            m_garbage_sequences_count++;
-
-            break;
-        }
-        case 2:
+    int sent_packets_amount = 0;
+    std::uniform_int_distribution<int> scenario_dist(0, 4);
+    while (g_keep_running_system && (MAX_PKGS_AMOUNT == -1 || sent_packets_amount < MAX_PKGS_AMOUNT))
+    {
+        for (int i = 0; i < batch_size && (MAX_PKGS_AMOUNT == -1 || sent_packets_amount < MAX_PKGS_AMOUNT); )
         {
-            // Generate a valid random packet and send it fragmented
-            generate_valid_telemetry_data(random_data);
-            BytesArray packet_to_send = build_telemetry_packet(random_data);
-            std::uniform_int_distribution<size_t> split_dist(1, packet_to_send.size() - 1);
-            size_t split_idx = split_dist(m_gen);
-            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
+            TelemetryData random_data;
+            int scenario = scenario_dist(m_gen);
+            if (scenario == 4 && (MAX_PKGS_AMOUNT - sent_packets_amount) == 1)
+                scenario = 1;
+            switch (scenario)
             {
-                std::cout << "[DroneDataSimulator] Send a valid packet, fragmented to " << split_idx << " & " << (packet_to_send.size() - split_idx) << " bytes : ";
-                print_bytes_array_c_style(packet_to_send);
-            }
-            // send the first part, wait a bit, then send the rest
-            send(sock, packet_to_send.data(), split_idx, 0);
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            send(sock, packet_to_send.data() + split_idx, packet_to_send.size() - split_idx, 0);
-            
-            m_sent_valid_packets.push_back(packet_to_send);
-            m_fragmented_packets_count++;
-
-            break;
-        }
-        case 3:
-        {
-            // Generate a valid random packet, but corrupt its payload data, to simulate cases of incorrent CRC
-            generate_valid_telemetry_data(random_data);
-            BytesArray packet_to_send = build_telemetry_packet(random_data);
-            bool corrupted = statistic_packet_corruption(packet_to_send, 50);
-            if (!corrupted)
+            case 0:
             {
+                // Generate & Send a complete valid telemetry data
+                generate_valid_telemetry_data(random_data);
+                BytesArray packet_to_send = build_telemetry_packet(random_data);
+                send(sock, packet_to_send.data(), packet_to_send.size(), 0);
                 m_sent_valid_packets.push_back(packet_to_send);
-                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
+                if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
                 {
                     std::cout << "[DroneDataSimulator] Send a full valid packet : ";
                     print_bytes_array_c_style(packet_to_send);
                 }
+
+                sent_packets_amount++;
+                i++;
+
+                break;
             }
-            else
+            case 1:
             {
-                m_corrupted_packets_count++;
-                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR)
-                {   
-                    std::cout << "[DroneDataSimulator] Send a packet with corrupted payload : ";
+                // Generate & Send a completely random packet (garbage data) that does not follow the telemetry packet structure, to simulate extreme corruption or noise in the communication channel.
+                std::uniform_int_distribution<size_t> len_dist(5, 50);
+                size_t garbage_len = len_dist(m_gen);
+                BytesArray garbage_packet(garbage_len);
+                std::uniform_int_distribution<uint16_t> byte_dist(0, 255); 
+                for (size_t i = 0; i < garbage_len; ++i)
+                    garbage_packet[i] = static_cast<uint8_t>(byte_dist(m_gen)); // "uniform_int_distribution" must get type of minimum 16-bit, so cannot random nmber type of 1-byte. Instead, random 2-bytes integers in range of 1-byte-values (0-255) and convert them to 1 byte
+                
+                send(sock, garbage_packet.data(), garbage_packet.size(), 0);
+                
+                if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                {
+                    std::cout << "[DroneDataSimulator] Send " << garbage_len << " bytes of garbage : ";
+                    print_bytes_array_c_style(garbage_packet);
+                }
+
+                m_garbage_sequences_count++;
+
+                break;
+            }
+            case 2:
+            {
+                // Generate a valid random packet and send it fragmented
+                generate_valid_telemetry_data(random_data);
+                BytesArray packet_to_send = build_telemetry_packet(random_data);
+                std::uniform_int_distribution<size_t> split_dist(1, packet_to_send.size() - 1);
+                size_t split_idx = split_dist(m_gen);
+                if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                {
+                    std::cout << "[DroneDataSimulator] Send a valid packet, fragmented to " << split_idx << " & " << (packet_to_send.size() - split_idx) << " bytes : ";
                     print_bytes_array_c_style(packet_to_send);
                 }
+                // send the first part, wait a bit, then send the rest
+                send(sock, packet_to_send.data(), split_idx, 0);
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                send(sock, packet_to_send.data() + split_idx, packet_to_send.size() - split_idx, 0);
+                
+                m_sent_valid_packets.push_back(packet_to_send);
+                sent_packets_amount++;
+                i++;
+                m_fragmented_packets_count++;
+
+                break;
             }
-            
-            send(sock, packet_to_send.data(), packet_to_send.size(), 0);
-                        
-            break;
-        }
-        case 4:
-        {
-            // Generate a sequence of multiple packets arriving in a single buffer (without a delay between them)
-            std::uniform_int_distribution<int> amount_dist(2, 5);
-            int amount = amount_dist(m_gen);
-            if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) std::cout << "[DroneDataSimulator] Send sequence of " << amount << " full valid packets : ";
-            std::vector<BytesArray> packets_to_send;
-            for (int i = 0; i < amount; i++)
+            case 3:
             {
+                // Generate a valid random packet, but corrupt its payload data, to simulate cases of incorrent CRC
                 generate_valid_telemetry_data(random_data);
-                BytesArray packet = build_telemetry_packet(random_data);
-                packets_to_send.push_back(build_telemetry_packet(random_data));
-                if (LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) print_bytes_array_c_style(packet);
+                BytesArray packet_to_send = build_telemetry_packet(random_data);
+                bool corrupted = statistic_packet_corruption(packet_to_send, 50);
+                if (!corrupted)
+                {
+                    m_sent_valid_packets.push_back(packet_to_send);
+                    if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                    {
+                        std::cout << "[DroneDataSimulator] Send a full valid packet : ";
+                        print_bytes_array_c_style(packet_to_send);
+                    }
+                }
+                else
+                {
+                    m_corrupted_packets_count++;
+                    if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                    {   
+                        std::cout << "[DroneDataSimulator] Send a packet with corrupted payload : ";
+                        print_bytes_array_c_style(packet_to_send);
+                    }
+                }
+                    
+                send(sock, packet_to_send.data(), packet_to_send.size(), 0);
+                sent_packets_amount++;
+                i++;
+
+                break;
             }
-            
-            for (auto packet : packets_to_send)
+            case 4:
             {
-                send(sock, packet.data(), packet.size(), 0);
-                m_sent_valid_packets.push_back(packet);
+                // Generate a sequence of multiple packets arriving in a single buffer (without a delay between them)
+                std::uniform_int_distribution<int> amount_dist(2, std::min(5, MAX_PKGS_AMOUNT-sent_packets_amount+1));
+                int amount = amount_dist(m_gen);
+                if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                    std::cout << "[DroneDataSimulator] Send sequence of " << amount << " full valid packets : ";
+                std::vector<BytesArray> packets_to_send;
+                for (int j = 0; j < amount; j++)
+                {
+                    generate_valid_telemetry_data(random_data);
+                    BytesArray packet = build_telemetry_packet(random_data);
+                    packets_to_send.push_back(build_telemetry_packet(random_data));
+                    if ((LOG_LEVEL & LogLevel::DEBUG_SIMULATOR) && (sent_packets_amount % 10 == 0))
+                        print_bytes_array_c_style(packet);
+                }
+                
+                for (auto packet : packets_to_send)
+                {
+                    send(sock, packet.data(), packet.size(), 0);
+                    sent_packets_amount++;
+                    i++;
+                    m_sent_valid_packets.push_back(packet);
+                }
+                
+                break;
             }
-            
-            break;
-        }
-        default:
-            break;
+            default:
+                break;
+            }
         }
 
-        // Waiting to avoid flooding the sensor with packets at too high a rate
-        std::this_thread::sleep_for(std::chrono::milliseconds(DATA_SENDING_FREQUENCY_MS));
+        // Sleep once per batch
+        if (delay_ms > 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        }
     }
 
     // Ensure cleanup before finish this current thread

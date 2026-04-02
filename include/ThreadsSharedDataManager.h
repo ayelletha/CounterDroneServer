@@ -26,8 +26,11 @@ public:
      */
     void push_data(T item)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_shared_data.push(std::move(item));
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_shared_data.push(std::move(item));
+        } // unlock 'm_mutex' AFTER finish push new data, but BEFORE notify threads that are waiting on 'm_cond_var', to avoid case of Pessimization
+       
         m_cond_var.notify_one(); // only 1 unit of data was added, so we only need to notify one waiting thread (the data-consumer) to wake up and consume this new data
     }
 
@@ -38,6 +41,12 @@ public:
      */
     bool pop_data_with_timeout(T& item, int timeout_ms)
     {
+        /* when we call mutex's lock before 'm_cond_var.wait_for', we avoid the race condition of 
+             pushing new data (by the producer thread) to the queue
+             a micro-sec AFTER the consumer thread found out that there is no data to pop, so started falling a sleep. 
+           Inside the 'wait_for' the OS unlock the mutex AND puts the thread into sleep - in single atomic operation, to allow now a new data to be added by the producer thread.
+           Once new data was added, the producer thread notify to wake up the consumer thread, that lock the mtex again and pop this new data while the mutex is locked
+        */
         std::unique_lock<std::mutex> lock(m_mutex);
         
         // The thread that calls pop() will wait here until either timeout reached or there is data in the queue or the program is stopped (for example, by Ctrl+C or system interrupt),
@@ -66,8 +75,10 @@ public:
     */
     bool pop_all(std::vector<T>& items)
     {
+        /* See comment at "pop_data_with_timeout" about the mutex-locking & waiting_for notification on the condition variable...
+        */
         std::unique_lock<std::mutex> lock(m_mutex);
-        
+           
         // The thread that calls pop() will wait here until either there is data in the queue or the program is stopped (for example, by Ctrl+C or system interrupt),
         m_cond_var.wait(lock, [this]() { return !m_shared_data.empty() || !g_keep_running_system; });
 

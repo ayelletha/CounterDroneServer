@@ -57,25 +57,26 @@ void SensorDataConsumer::process_loop()
     std::cout << "[SensorDataConsumer] Terminate thread\n";
 }
 
-void SensorDataConsumer::process_telemetry_payload(bool& state_changed, size_t total_packet_size)
+void SensorDataConsumer::process_telemetry_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed, size_t total_packet_size)
 {
     // Calculate CRC over Header + Length + Payload
-    BytesArray package_data_without_crc(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size - 2);
+    BytesArray package_data_without_crc(accumulated_data_view.begin(), accumulated_data_view.begin() + total_packet_size - 2);
     uint16_t calculated_crc = calculate_crc16(package_data_without_crc);
     
     // Extract the received CRC from the end of the packet
-    uint16_t received_crc = (m_accumulated_data[total_packet_size - 2] << 8) | m_accumulated_data[total_packet_size - 1];
+    uint16_t received_crc = (accumulated_data_view[total_packet_size - 2] << 8) | accumulated_data_view[total_packet_size - 1];
 
     if (calculated_crc == received_crc)
     {
         // Valid packet! Deserialize and push to the shared_telemetry_packets's queue
         // Extract strictly the bytes belonging to this valid packet for logging
         BytesArray current_valid_packet_bytes(
-            m_accumulated_data.begin(), 
-            m_accumulated_data.begin() + total_packet_size
+            accumulated_data_view.begin(), 
+            accumulated_data_view.begin() + total_packet_size
         );
         m_received_valid_packets.push_back(current_valid_packet_bytes);
-        TelemetryData data = deserialize_payload(m_accumulated_data, 5);
+
+        TelemetryData data = deserialize_payload(accumulated_data_view.substr(PAYLOAD_STARTING_IDX));
         m_shared_telemetry_packets_manager.push_data(data);
         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
         {
@@ -83,7 +84,7 @@ void SensorDataConsumer::process_telemetry_payload(bool& state_changed, size_t t
         }
         
         // Erase the processed packet from the buffer to advance to the next one
-        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + total_packet_size);
+        accumulated_data_view.remove_prefix(total_packet_size);
     }
     else
     {
@@ -96,7 +97,7 @@ void SensorDataConsumer::process_telemetry_payload(bool& state_changed, size_t t
         }
         
         // Resynchronization approach: discard the first byte (0xAA) and search again
-        m_accumulated_data.erase(m_accumulated_data.begin());
+        accumulated_data_view.remove_prefix(1);
     }
 
     // Return to sync state for the next packet
@@ -104,12 +105,12 @@ void SensorDataConsumer::process_telemetry_payload(bool& state_changed, size_t t
     state_changed = true;
 }
 
-void SensorDataConsumer::process_heart_beat_payload(bool& state_changed)
+void SensorDataConsumer::process_heart_beat_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
 {
 
 }
 
-void SensorDataConsumer::process_command_payload(bool& state_changed)
+void SensorDataConsumer::process_command_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
 {
 
 }
@@ -121,10 +122,13 @@ void SensorDataConsumer::process_accumulated_data()
         std::cout << "[SensorDataConsumer] Start processing this accumulated raw data (" << m_accumulated_data.size() << " bytes): ";
         print_bytes_array_c_style(m_accumulated_data);
     }
+
+    std::basic_string_view<uint8_t> accumulated_data_view(m_accumulated_data.data(), m_accumulated_data.size());
+
     bool state_changed = true;
 
     // Keep processing as long as we have data and the state machine is advancing
-    while (state_changed && !m_accumulated_data.empty())
+    while (state_changed && !accumulated_data_view.empty())
     {
         state_changed = false; 
 
@@ -132,16 +136,16 @@ void SensorDataConsumer::process_accumulated_data()
         {
             case ParserState::WAIT_FOR_SYNC:
             {
-                /*  At this state the parser trying to find a legal header (0xAA55), by passing over the m_accumulated_data byte after byte, starting from the first byte of the sequence.
+                /*  At this state the parser trying to find a legal header (0xAA55), by passing over the accumulated_data_view byte after byte, starting from the first byte of the sequence.
                     When find, it means that all the bytes before this header are garbage so the parser erases them from the sequence, and change the machine-state to READ_LENGTH. 
                 */
                 size_t sync_index = 0;
                 bool sync_found = false;
                 
                 // Search for the valid header signature: 0xAA followed by 0x55
-                for (; sync_index < m_accumulated_data.size() - 1; ++sync_index)
+                for (; sync_index < accumulated_data_view.size() - 1; ++sync_index)
                 {
-                    if (m_accumulated_data[sync_index] == HEADER_BYTES[0] && m_accumulated_data[sync_index + 1] == HEADER_BYTES[1])
+                    if (accumulated_data_view[sync_index] == HEADER_BYTES[0] && accumulated_data_view[sync_index + 1] == HEADER_BYTES[1])
                     {
                         sync_found = true;
                         break;
@@ -152,7 +156,7 @@ void SensorDataConsumer::process_accumulated_data()
                 {
                     // Erase any garbage bytes that arrived before the header
                     if (sync_index > 0)
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + sync_index);
+                        accumulated_data_view.remove_prefix(sync_index); // Slices the view forward in O(1) time without copying memory
                     
                     // Header found, advance to the next state
                     m_state = ParserState::READ_TYPE;
@@ -162,20 +166,30 @@ void SensorDataConsumer::process_accumulated_data()
                 {
                     // No complete header found in the current buffer.
                     // Keep the last byte ONLY if it's 0xAA, as 0x55 might arrive in the next chunk.
-                    if (m_accumulated_data.back() == HEADER_BYTES[0])
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.end() - 1);
-                    else
-                        m_accumulated_data.clear();
+                    if (!accumulated_data_view.empty()) // safe check
+                    {
+                        if (accumulated_data_view.back() == HEADER_BYTES[0]) 
+                        {
+                            // Drop everything except the very last byte in O(1) time
+                            accumulated_data_view.remove_prefix(accumulated_data_view.size() - 1);
+                        } 
+                        else 
+                        {
+                            // Drop all bytes! (simulates vector::clear() in O(1) time)
+                            accumulated_data_view.remove_prefix(accumulated_data_view.size());
+                        }
+                    }
                 }
+               
                 break;
             }
 
             case ParserState::READ_TYPE:
             {
-                if (m_accumulated_data.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES))
+                if (accumulated_data_view.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES))
                 {
-                    TypeMsg type_val = static_cast<TypeMsg>(m_accumulated_data[TYPE_STARTING_IDX]);
-                    // std::cout << m_accumulated_data[2] << "\n";
+                    TypeMsg type_val = static_cast<TypeMsg>(accumulated_data_view[TYPE_STARTING_IDX]);
+                    // std::cout << accumulated_data_view[2] << "\n";
                     switch (type_val)
                     {
                     case TypeMsg::TELEMETRY:
@@ -208,7 +222,7 @@ void SensorDataConsumer::process_accumulated_data()
                         //std::cout<<
                         m_crc_errors_count++;
                         // Erase only the header, because maybe at current byte (of the expected msg-type) will be a new header
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin()+HEADER_SIZE_BYTES);
+                        accumulated_data_view.remove_prefix(HEADER_SIZE_BYTES);
                         m_state = ParserState::WAIT_FOR_SYNC;
                         state_changed = true;
                         break;
@@ -221,10 +235,10 @@ void SensorDataConsumer::process_accumulated_data()
             case ParserState::READ_LENGTH:
             {
                 // Wait until we have at enough bytes before and including the length field
-                if (m_accumulated_data.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES + LENGTH_SIZE_BYTES))
+                if (accumulated_data_view.size() >= (HEADER_SIZE_BYTES + TYPE_SIZE_BYTES + LENGTH_SIZE_BYTES))
                 {
                     // Extract the payload length (Big-Endian network order)
-                    m_expected_payload_length = (m_accumulated_data[LENGTH_STARTING_IDX] << 8) | m_accumulated_data[LENGTH_STARTING_IDX + 1];
+                    m_expected_payload_length = (accumulated_data_view[LENGTH_STARTING_IDX] << 8) | accumulated_data_view[LENGTH_STARTING_IDX + 1];
 
                     // Heuristic filter: check if the length makes sense for our telemetry packet (between 30 and 80 bytes)
                     if (m_expected_payload_length < MIN_PAYLOAD_EXP_LENGTH || m_expected_payload_length > MAX_PAYLOAD_EXP_LENGTH)
@@ -239,7 +253,7 @@ void SensorDataConsumer::process_accumulated_data()
                             
                         // Resynchronization approach (Sliding Window): 
                         // Erase only the bytes before the length field, to resume sync search from the next byte
-                        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + HEADER_SIZE_BYTES); 
+                        accumulated_data_view.remove_prefix(HEADER_SIZE_BYTES);
                         m_state = ParserState::WAIT_FOR_SYNC;
                     }
                     else
@@ -261,23 +275,23 @@ void SensorDataConsumer::process_accumulated_data()
                 //  but wait to the rest of the packet will be appended to 'm_accumulated_data' at the next chunk
                 //  (i.e. waits on call 'm_shared_raw_data_manager.pop_all' at 'process_loop' function).
                 // The m_state remains READ_PAYLOAD, so once additional data will arrive - machine tries to execute this case again.
-                if (m_accumulated_data.size() >= total_packet_size)
+                if (accumulated_data_view.size() >= total_packet_size)
                 {
                     switch (m_type)
                     {
                         case TypeMsg::TELEMETRY:
                         {
-                            process_telemetry_payload(state_changed, total_packet_size);
+                            process_telemetry_payload(accumulated_data_view, state_changed, total_packet_size);
                             break;
                         }
                         case TypeMsg::HEART_BEAT:
                         {
-                            process_heart_beat_payload(state_changed);
+                            process_heart_beat_payload(accumulated_data_view, state_changed);
                             break;
                         }
                         case TypeMsg::COMMAND:
                         {
-                            process_command_payload(state_changed);
+                            process_command_payload(accumulated_data_view, state_changed);
                             break;
                         }
                         default:
@@ -298,21 +312,38 @@ void SensorDataConsumer::process_accumulated_data()
             }
         }
     }
+
+    // 3. Perform the expensive vector erase ONLY ONCE for all processed data:
+    size_t processed_bytes = m_accumulated_data.size() - accumulated_data_view.size();
+    if (processed_bytes > 0) 
+    {
+        m_accumulated_data.erase(m_accumulated_data.begin(), m_accumulated_data.begin() + processed_bytes);
+    }
+
 }
 
-TelemetryData SensorDataConsumer::deserialize_payload(const BytesArray& buffer, size_t start_idx)
+TelemetryData SensorDataConsumer::deserialize_payload(std::basic_string_view<uint8_t> payload_view)
 {
-    size_t idx = start_idx;
-
     // Read the drone_id string (first byte is length, followed by characters)
-    uint8_t id_len = buffer[idx++];
-    std::string drone_id(buffer.begin() + idx, buffer.begin() + idx + id_len);
-    idx += id_len;
+    uint8_t id_len = payload_view[0];
+    
+    // Drop the length byte from our local view
+    payload_view.remove_prefix(1); 
 
-    // Helper lambda to safely read numeric primitives from the buffer
-    auto read_primitive = [&buffer, &idx](auto& val) {
-        std::memcpy(&val, &buffer[idx], sizeof(val));
-        idx += sizeof(val);
+    // Construct the string using the view's iterators (it implicitly converts uint8_t to char)
+    std::string drone_id(payload_view.begin(), payload_view.begin() + id_len);
+    
+    // Drop the string characters from our local view
+    payload_view.remove_prefix(id_len); 
+
+    // Helper lambda to safely read numeric primitives from the front of the view
+    // We capture payload_view by reference so the lambda can modify the local view
+    auto read_primitive = [&payload_view](auto& val) {
+        // Copy the data directly from the view's underlying pointer
+        std::memcpy(&val, payload_view.data(), sizeof(val));
+        
+        // Slide the view forward by the size of the primitive we just read
+        payload_view.remove_prefix(sizeof(val));
     };
 
     double lat, lon, alt, spd;
@@ -326,3 +357,4 @@ TelemetryData SensorDataConsumer::deserialize_payload(const BytesArray& buffer, 
 
     return TelemetryData(drone_id, lat, lon, alt, spd, ts);
 }
+

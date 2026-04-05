@@ -47,14 +47,14 @@ private:
             - Loss of synchronization with packet boundaries
      */
     void process_accumulated_data();
-    void process_telemetry_payload(bool& state_changed, size_t total_packet_size);
-    void process_heart_beat_payload(bool& state_changed);
-    void process_command_payload(bool& state_changed);
+    void process_telemetry_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed, size_t total_packet_size);
+    void process_heart_beat_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed);
+    void process_command_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed);
 
     /**
      * Extract the telemetry data from valid packets found in the raw-data buffer, and pack it into a 'TelemetryData' structure for processing in 'TelemetryDataProccessor'
      */
-    TelemetryData deserialize_payload(const BytesArray& buffer, size_t start_idx);
+    TelemetryData deserialize_payload(std::basic_string_view<uint8_t> payload_view);
 
 public:
 

@@ -316,5 +316,10 @@ void DroneDataSimulator::process_loop()
     // Ensure cleanup before finish this current thread
     close(sock);
     
+    if (MAX_PKGS_AMOUNT >= 0 && sent_packets_amount >= MAX_PKGS_AMOUNT)
+    {
+        std::cout << "[DroneDataSimulator] All the " << sent_packets_amount << " required packets were sent!\n";
+    }
+
     std::cout << "[DroneDataSimulator] Terminate thread\n";
 }

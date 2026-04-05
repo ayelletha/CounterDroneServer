@@ -1,8 +1,8 @@
-#include "SensorDataConsumer.h"
+#include "SensorDataParser.h"
 #include "Configuration.h"
 #include <cstring>
 
-SensorDataConsumer::SensorDataConsumer(
+SensorDataParser::SensorDataParser(
     ThreadsSharedDataManager<BytesArray>& raw_data_manager, 
     ThreadsSharedDataManager<TelemetryData>& packets_manager) 
     : m_shared_raw_data_manager(raw_data_manager), 
@@ -14,14 +14,14 @@ SensorDataConsumer::SensorDataConsumer(
 {
 }
 
-const std::vector<BytesArray>& SensorDataConsumer::received_valid_packets() { return m_received_valid_packets; }
-int SensorDataConsumer::crc_errors_amount() { return m_crc_errors_count; }
-int SensorDataConsumer::invalid_structure_amount() { return m_invalid_structure_count; }
-int SensorDataConsumer::telemetry_pkt_count() { return m_telemetry_pkt_count; }
-int SensorDataConsumer::heart_beat_pkt_count() { return m_heart_beat_pkt_count; }
-int SensorDataConsumer::cmd_pkt_count() { return m_cmd_pkt_count; }
+const std::vector<BytesArray>& SensorDataParser::received_valid_packets() { return m_received_valid_packets; }
+int SensorDataParser::crc_errors_amount() { return m_crc_errors_count; }
+int SensorDataParser::invalid_structure_amount() { return m_invalid_structure_count; }
+int SensorDataParser::telemetry_pkt_count() { return m_telemetry_pkt_count; }
+int SensorDataParser::heart_beat_pkt_count() { return m_heart_beat_pkt_count; }
+int SensorDataParser::cmd_pkt_count() { return m_cmd_pkt_count; }
 
-void SensorDataConsumer::process_loop()
+void SensorDataParser::process_loop()
 {
     while (g_keep_running_system)
     {
@@ -42,7 +42,7 @@ void SensorDataConsumer::process_loop()
 
             if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
             {
-                std::cout << "[SensorDataConsumer] Popped " << new_data_chunks.size() 
+                std::cout << "[SensorDataParser] Popped " << new_data_chunks.size() 
                           << " chunks, totaling " << total_new_bytes << " bytes of raw data\n";
             }
 
@@ -54,10 +54,10 @@ void SensorDataConsumer::process_loop()
     // Ensure cleanup & release other threads blocking, before finish this current thread
     m_shared_telemetry_packets_manager.wake_up_all();
     
-    std::cout << "[SensorDataConsumer] Terminate thread\n";
+    std::cout << "[SensorDataParser] Terminate thread\n";
 }
 
-void SensorDataConsumer::process_telemetry_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed, size_t total_packet_size)
+void SensorDataParser::process_telemetry_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed, size_t total_packet_size)
 {
     // Calculate CRC over Header + Length + Payload
     BytesArray package_data_without_crc(accumulated_data_view.begin(), accumulated_data_view.begin() + total_packet_size - 2);
@@ -80,7 +80,7 @@ void SensorDataConsumer::process_telemetry_payload(std::basic_string_view<uint8_
         m_shared_telemetry_packets_manager.push_data(data);
         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
         {
-            std::cout << "[SensorDataConsumer] Valid package is found !!\n";
+            std::cout << "[SensorDataParser] Valid package is found !!\n";
         }
         
         // Erase the processed packet from the buffer to advance to the next one
@@ -92,7 +92,7 @@ void SensorDataConsumer::process_telemetry_payload(std::basic_string_view<uint8_
         m_crc_errors_count++;
         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
         {
-            std::cerr << "[SensorDataConsumer] CRC validation failed! Total CRC errors: " 
+            std::cerr << "[SensorDataParser] CRC validation failed! Total CRC errors: " 
                     << m_crc_errors_count << ". Resyncing...\n";
         }
         
@@ -105,21 +105,21 @@ void SensorDataConsumer::process_telemetry_payload(std::basic_string_view<uint8_
     state_changed = true;
 }
 
-void SensorDataConsumer::process_heart_beat_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
+void SensorDataParser::process_heart_beat_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
 {
 
 }
 
-void SensorDataConsumer::process_command_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
+void SensorDataParser::process_command_payload(std::basic_string_view<uint8_t>& accumulated_data_view, bool& state_changed)
 {
 
 }
 
-void SensorDataConsumer::process_accumulated_data()
+void SensorDataParser::process_accumulated_data()
 {
     if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
     {
-        std::cout << "[SensorDataConsumer] Start processing this accumulated raw data (" << m_accumulated_data.size() << " bytes): ";
+        std::cout << "[SensorDataParser] Start processing this accumulated raw data (" << m_accumulated_data.size() << " bytes): ";
         print_bytes_array_c_style(m_accumulated_data);
     }
 
@@ -246,7 +246,7 @@ void SensorDataConsumer::process_accumulated_data()
                         m_invalid_structure_count++;
                         if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
                         {
-                            std::cerr << "[SensorDataConsumer] Invalid structure detected (Length: " 
+                            std::cerr << "[SensorDataParser] Invalid structure detected (Length: " 
                                     << m_expected_payload_length << "). Total structure errors: " 
                                     << m_invalid_structure_count << ". Resyncing...\n";
                         }
@@ -305,7 +305,7 @@ void SensorDataConsumer::process_accumulated_data()
                 {
                     if (LOG_LEVEL & LogLevel::DEBUG_PACKETS_FILTERRING)
                     {
-                        std::cout << "[SensorDataConsumer] Current packet is a fragmented, wait to the rest of the packet will arrie at the next chunk\n";
+                        std::cout << "[SensorDataParser] Current packet is a fragmented, wait to the rest of the packet will arrie at the next chunk\n";
                     }
                 }
                 break;
@@ -322,7 +322,7 @@ void SensorDataConsumer::process_accumulated_data()
 
 }
 
-TelemetryData SensorDataConsumer::deserialize_payload(std::basic_string_view<uint8_t> payload_view)
+TelemetryData SensorDataParser::deserialize_payload(std::basic_string_view<uint8_t> payload_view)
 {
     // Read the drone_id string (first byte is length, followed by characters)
     uint8_t id_len = payload_view[0];

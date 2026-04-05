@@ -8,7 +8,7 @@
 #include "ThreadsSharedDataManager.h"
 #include "DroneDataSimulator.h"
 #include "DroneDataSensor.h"
-#include "SensorDataConsumer.h"
+#include "SensorDataParser.h"
 #include "TelemetryDataProcessor.h"
 
 // a global variable to control the program's running state, used for graceful shutdown for clean & stop all the program's threads correctly
@@ -35,7 +35,7 @@ int main()
 
     DroneDataSimulator drone_data_simulator;
     DroneDataSensor drone_data_sensor(m_shared_raw_data_manager);
-    SensorDataConsumer sensor_data_consumer(m_shared_raw_data_manager, m_shared_telemetry_packets_manager);
+    SensorDataParser sensor_data_consumer(m_shared_raw_data_manager, m_shared_telemetry_packets_manager);
     TelemetryDataProcessor valid_packets_processor(m_shared_telemetry_packets_manager);
 
     std::vector<std::thread> thread_pool;
@@ -44,7 +44,7 @@ int main()
 
     thread_pool.emplace_back(&DroneDataSimulator::process_loop, &drone_data_simulator);
     thread_pool.emplace_back(&DroneDataSensor::process_loop, &drone_data_sensor);
-    thread_pool.emplace_back(&SensorDataConsumer::process_loop, &sensor_data_consumer);
+    thread_pool.emplace_back(&SensorDataParser::process_loop, &sensor_data_consumer);
     thread_pool.emplace_back(&TelemetryDataProcessor::process_loop, &valid_packets_processor);
     
     while (g_keep_running_system) // to avoid terminate the main proccess of the Counter-Drones-System

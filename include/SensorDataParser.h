@@ -19,7 +19,7 @@ enum class ParserState
 constexpr int MIN_PAYLOAD_EXP_LENGTH = 40; // bytes
 constexpr int MAX_PAYLOAD_EXP_LENGTH = 80; // bytes
 
-class SensorDataConsumer
+class SensorDataParser
 {
 private:
     ThreadsSharedDataManager<BytesArray>& m_shared_raw_data_manager; // the data is a sequence of bytes exactly as they come from the network, shared with class DroneDataSensor
@@ -58,8 +58,8 @@ private:
 
 public:
 
-    SensorDataConsumer(ThreadsSharedDataManager<BytesArray>& raw_data_manager, 
-                       ThreadsSharedDataManager<TelemetryData>& packets_manager);
+    SensorDataParser(ThreadsSharedDataManager<BytesArray>& raw_data_manager, 
+                     ThreadsSharedDataManager<TelemetryData>& packets_manager);
     void process_loop();
 
     const std::vector<BytesArray>& received_valid_packets();
